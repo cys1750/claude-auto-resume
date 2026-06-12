@@ -1,0 +1,13 @@
+{
+  "Prompt": "Continue working on the previous task from where you left off. If the previous task is already complete, reply with a short status summary and stop.",
+  "LookbackHours": 5,
+  "MaxSessionsPerRun": 3,
+  "Mode": "headless",
+  "CheckIntervalMinutes": 15,
+  "ResetBufferMinutes": 3,
+  "UnknownResetRetryMinutes": 30,
+  "ProbeModel": "haiku",
+  "ClaudePath": "",
+  "ExtraArgs": ["--permission-mode", "acceptEdits"],
+  "Projects": []
+}
