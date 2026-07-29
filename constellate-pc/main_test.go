@@ -152,3 +152,38 @@ func handlerCode(t *testing.T, h http.Handler, host string) int {
 	h.ServeHTTP(rec, req)
 	return rec.Code
 }
+
+func TestSidecarFilesStandInForFlags(t *testing.T) {
+	dir := t.TempDir()
+
+	// An empty folder changes nothing: no exposure without a deliberate file.
+	lan, snapshot := false, ""
+	if notes := resolveSidecars(dir, &lan, &snapshot); len(notes) != 0 || lan || snapshot != "" {
+		t.Fatalf("empty folder enabled something: lan=%v snapshot=%q notes=%v", lan, snapshot, notes)
+	}
+
+	for _, name := range []string{lanSidecar, snapshotSidecar} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	notes := resolveSidecars(dir, &lan, &snapshot)
+	if !lan {
+		t.Errorf("%s did not enable lan mode", lanSidecar)
+	}
+	if snapshot != filepath.Join(dir, snapshotSidecar) {
+		t.Errorf("snapshot = %q, want the file beside the exe", snapshot)
+	}
+	if len(notes) != 2 {
+		t.Errorf("notes = %v, want one per setting so the user can see why", notes)
+	}
+
+	// An explicit flag wins, and stays reported as-is.
+	lan, snapshot = true, "C:/elsewhere/snap.json"
+	if notes := resolveSidecars(dir, &lan, &snapshot); len(notes) != 0 {
+		t.Errorf("sidecars overrode explicit flags: %v", notes)
+	}
+	if snapshot != "C:/elsewhere/snap.json" {
+		t.Errorf("snapshot flag was overwritten with %q", snapshot)
+	}
+}

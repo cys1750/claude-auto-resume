@@ -141,6 +141,21 @@ there; they also go to `%LOCALAPPDATA%\Constellate\launcher.log`. Your shell get
 its prompt back straight away — that is normal for a windowed app, and the
 launcher keeps running until you close the Constellate window.
 
+**If you cannot run it from a terminal at all** — plenty of managed Windows
+machines block that while still allowing a double-click — the same two settings
+can be switched on with files placed next to `Constellate.exe`:
+
+| File beside the exe | Same as |
+| --- | --- |
+| `enable-lan.txt` (any contents, even empty) | `-lan` |
+| `constellate-snapshot.json` | `-snapshot <that file>` |
+
+Create the first with right-click → *New* → *Text Document*, and put your
+exported snapshot beside the exe under its own name. Double-click
+`Constellate.exe` as usual; it reports which files it found. Delete
+`enable-lan.txt` to stop serving the network — there is no exposure unless that
+file is deliberately there.
+
 Read that flag as what it is: while the window is open, anything on the network
 can read your map — no password, no encryption. It is off by default for that
 reason, and the launcher still refuses requests that arrive under any name other

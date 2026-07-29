@@ -74,6 +74,14 @@ func main() {
 			"the Constellate web app into constellate-pc/web, then rebuild.")
 	}
 
+	// Flags need a terminal, and on a locked-down Windows machine running an exe
+	// from one is not always possible, so both settings can also be switched on
+	// by dropping a file next to the executable.
+	for _, note := range resolveSidecars(exeDir(), lan, snapshotPath) {
+		log.Print(note)
+		fmt.Println(note)
+	}
+
 	if *snapshotPath != "" {
 		if _, err := os.Stat(*snapshotPath); err != nil {
 			fatal("Cannot read the snapshot at %s: %v", *snapshotPath, err)
@@ -370,6 +378,50 @@ func openInDefaultBrowser(url string) error {
 	default:
 		return exec.Command("xdg-open", url).Start()
 	}
+}
+
+// Files that stand in for the flags of the same name, read from the executable's
+// own folder. Both are opt-in by existing at all: nothing is served and nothing
+// is exposed unless a file was deliberately put there.
+const (
+	lanSidecar      = "enable-lan.txt"
+	snapshotSidecar = snapshotName
+)
+
+// resolveSidecars turns those files into settings, returning what it did so the
+// user can see why the launcher behaves differently from a bare double-click.
+func resolveSidecars(dir string, lan *bool, snapshot *string) []string {
+	if dir == "" {
+		return nil
+	}
+	var notes []string
+	if !*lan {
+		if _, err := os.Stat(filepath.Join(dir, lanSidecar)); err == nil {
+			*lan = true
+			notes = append(notes, "Found "+lanSidecar+" — serving other devices on this network.")
+		}
+	}
+	if *snapshot == "" {
+		candidate := filepath.Join(dir, snapshotSidecar)
+		if _, err := os.Stat(candidate); err == nil {
+			*snapshot = candidate
+			notes = append(notes, "Found "+snapshotSidecar+" — offering it to devices that have no map of their own.")
+		}
+	}
+	return notes
+}
+
+// exeDir is where the executable itself lives, which is where someone who cannot
+// use a terminal will naturally put things.
+func exeDir() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	return filepath.Dir(exe)
 }
 
 // dataDir is where the browser profile and the launcher log live: per-user,
