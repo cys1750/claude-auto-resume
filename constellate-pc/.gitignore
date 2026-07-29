@@ -1,0 +1,4 @@
+# Fetched at build time from upstream, not vendored here.
+web/
+# Build output.
+dist/

@@ -1,0 +1,32 @@
+Paint the nodes after a rebuild so the map is not blank on first load.
+
+rebuildAll() lays out the graph but never calls draw(), and draw() is what
+fills the per-node aColor/aSize/aAlpha attributes and the G.vis visibility
+flags. Until something else calls it, every node has size 0 and alpha 0 (the
+fragment shader discards them) and G.vis is all zeros, so the force simulation
+skips every node too. The result is an empty 3D viewport after "Load demo
+universe" or after importing an export — the sidebar, clusters and timeline all
+populate correctly, so it reads as a rendering failure rather than a missing
+repaint.
+
+Mouse movement does not recover it: hit-testing compares against invisible
+nodes, so S.hovered never changes and the draw() on hover never fires. Any
+control that calls draw() directly (the Labels checkbox, the colour selector,
+a search) makes the whole map appear at once, which is the tell.
+
+Verified against upstream 31508ea5630b4404409b468fbab249126ab6c18f: before the
+patch a freshly loaded demo universe reports 0 visible nodes and 0 lit pixels;
+after it, 150 visible nodes and ~10k lit pixels with no interaction.
+
+diff --git a/index.html b/index.html
+index b24eb84..6ead4b0 100644
+--- a/index.html
++++ b/index.html
+@@ -1803,6 +1803,7 @@ async function rebuildAll(fresh){
+   buildStats();
+   buildTimeline();
+   updateCounts();
++  draw();
+   reheat(1);
+   if (fresh) setTimeout(fitView, 600);
+   toastHide();
