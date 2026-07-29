@@ -48,6 +48,10 @@ const (
 )
 
 func main() {
+	// Before anything prints or the log is wired up: a GUI-subsystem binary has
+	// no console of its own, and this claims the one it was launched from.
+	attachParentConsole()
+
 	port := flag.Int("port", defaultPort, "loopback port to serve on")
 	noBrowser := flag.Bool("no-browser", false, "serve only; print the URL instead of opening a window")
 	browserPath := flag.String("browser", "", "path to a Chromium browser to use instead of the autodetected one")
@@ -109,6 +113,7 @@ func main() {
 		if *snapshotPath == "" {
 			banner += "Those devices start with an empty map; pass -snapshot <file> to offer them one.\n"
 		}
+		banner += "These addresses are also written to " + filepath.Join(dataDir(), "launcher.log") + "\n"
 		fmt.Print("\n" + banner)
 		log.Printf("lan mode: serving %v", addrs)
 	}

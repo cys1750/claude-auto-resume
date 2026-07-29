@@ -124,11 +124,22 @@ handled here: the launcher only listens on loopback, and the app's camera was
 wired for a mouse.
 
 **Let other devices reach it.** `-lan` serves your network as well as this
-machine and prints the address to type into the phone:
+machine and prints the address to type into the phone. Flags mean running it from
+a terminal rather than double-clicking — Command Prompt or PowerShell both work,
+from the folder holding the exe (PowerShell needs the `.\` prefix):
 
+```powershell
+.\Constellate.exe -lan -snapshot "$env:USERPROFILE\Downloads\constellate-snapshot.json"
 ```
-Constellate.exe -lan -snapshot constellate-snapshot.json
+
+```bat
+Constellate.exe -lan -snapshot "%USERPROFILE%\Downloads\constellate-snapshot.json"
 ```
+
+The launcher attaches to whichever console started it, so the addresses appear
+there; they also go to `%LOCALAPPDATA%\Constellate\launcher.log`. Your shell gets
+its prompt back straight away — that is normal for a windowed app, and the
+launcher keeps running until you close the Constellate window.
 
 Read that flag as what it is: while the window is open, anything on the network
 can read your map — no password, no encryption. It is off by default for that
@@ -197,7 +208,8 @@ capability upstream has no reason to want by default and exists to serve
 | Path | What it is |
 | --- | --- |
 | `main.go` | the launcher: embeds the app, serves loopback, opens the window |
-| `dialog_windows.go` | fatal-error message box (the exe has no console) |
+| `dialog_windows.go` | fatal-error message box (for when there is no console) |
+| `console_windows.go` | attaches the launching terminal's console so flags can report |
 | `main_test.go` | tests for host checking, serving, and port fallback |
 | `cmd/codesessions/` | `Export-CodeSessions.exe`: transcripts → snapshot, and `-prune` |
 | `fetch-web.sh` | fetches + patches the upstream web app into `web/` |
