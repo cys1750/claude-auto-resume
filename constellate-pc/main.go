@@ -51,6 +51,8 @@ func main() {
 	port := flag.Int("port", defaultPort, "loopback port to serve on")
 	noBrowser := flag.Bool("no-browser", false, "serve only; print the URL instead of opening a window")
 	browserPath := flag.String("browser", "", "path to a Chromium browser to use instead of the autodetected one")
+	lan := flag.Bool("lan", false, "also serve other devices on your network (see the README first)")
+	snapshotPath := flag.String("snapshot", "", "snapshot file to offer to devices that have no map of their own")
 	flag.Parse()
 
 	logFile := startLogging()
@@ -68,7 +70,13 @@ func main() {
 			"the Constellate web app into constellate-pc/web, then rebuild.")
 	}
 
-	listener, actualPort, err := listen(*port)
+	if *snapshotPath != "" {
+		if _, err := os.Stat(*snapshotPath); err != nil {
+			fatal("Cannot read the snapshot at %s: %v", *snapshotPath, err)
+		}
+	}
+
+	listener, actualPort, err := listen(*port, *lan)
 	if err != nil {
 		fatal("Could not open a local port to serve Constellate on: %v", err)
 	}
@@ -77,13 +85,33 @@ func main() {
 	}
 
 	url := fmt.Sprintf("http://127.0.0.1:%d/", actualPort)
-	server := &http.Server{Handler: handler(site)}
+	hosts := allowedHosts(*lan)
+	server := &http.Server{Handler: handler(site, *snapshotPath, hosts)}
 	go func() {
 		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("server stopped: %v", err)
 		}
 	}()
 	log.Printf("serving Constellate at %s", url)
+
+	if *lan {
+		// Anyone on the network can read the map while this runs, so say so
+		// plainly rather than burying it in the log.
+		addrs := lanURLs(actualPort)
+		banner := "Constellate is also reachable from other devices on this network:\n"
+		for _, a := range addrs {
+			banner += "    " + a + "\n"
+		}
+		if len(addrs) == 0 {
+			banner = "-lan was requested but no network address was found.\n"
+		}
+		banner += "\nAnything on this network can read your map while this window is open.\n"
+		if *snapshotPath == "" {
+			banner += "Those devices start with an empty map; pass -snapshot <file> to offer them one.\n"
+		}
+		fmt.Print("\n" + banner)
+		log.Printf("lan mode: serving %v", addrs)
+	}
 
 	if *noBrowser {
 		fmt.Printf("Constellate is running at %s\nPress Ctrl+C to stop.\n", url)
@@ -122,18 +150,103 @@ func main() {
 // handler serves the embedded site. Everything is local and single-user, so the
 // only header work needed is keeping the browser from caching a stale app after
 // an upgrade.
-func handler(site fs.FS) http.Handler {
+func handler(site fs.FS, snapshotPath string, hosts hostSet) http.Handler {
 	files := http.FileServer(http.FS(site))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Reject requests aimed at us under any other name — DNS rebinding is
-		// the realistic way a web page could otherwise reach this server.
-		if !isLoopbackHost(r.Host) {
+		// the realistic way a web page could otherwise reach this server, and it
+		// works just as well against a LAN address as a loopback one.
+		if !hosts.allows(r.Host) {
 			http.Error(w, "unexpected host", http.StatusForbidden)
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
+		// The app asks for this when its own storage is empty; without -snapshot
+		// there is nothing to give it, and 404 is the answer it expects.
+		if r.URL.Path == "/"+snapshotName {
+			if snapshotPath == "" {
+				http.NotFound(w, r)
+				return
+			}
+			http.ServeFile(w, r, snapshotPath)
+			return
+		}
 		files.ServeHTTP(w, r)
 	})
+}
+
+const snapshotName = "constellate-snapshot.json"
+
+// hostSet is the set of names this server answers to: loopback always, plus this
+// machine's own addresses in LAN mode.
+type hostSet struct {
+	lan   bool
+	local map[string]bool
+}
+
+func (h hostSet) allows(hostHeader string) bool {
+	if isLoopbackHost(hostHeader) {
+		return true
+	}
+	if !h.lan {
+		return false
+	}
+	host := hostHeader
+	if v, _, err := net.SplitHostPort(hostHeader); err == nil {
+		host = v
+	}
+	host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
+	return h.local[strings.ToLower(host)]
+}
+
+func allowedHosts(lan bool) hostSet {
+	set := hostSet{lan: lan, local: map[string]bool{}}
+	if !lan {
+		return set
+	}
+	if name, err := os.Hostname(); err == nil && name != "" {
+		set.local[strings.ToLower(name)] = true
+	}
+	for _, ip := range localIPs() {
+		set.local[strings.ToLower(ip)] = true
+	}
+	return set
+}
+
+// localIPs lists the addresses assigned to this machine's live interfaces.
+func localIPs() []string {
+	var out []string
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return out
+	}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			if ipnet, ok := addr.(*net.IPNet); ok && ipnet.IP.IsGlobalUnicast() {
+				out = append(out, ipnet.IP.String())
+			}
+		}
+	}
+	return out
+}
+
+// lanURLs is what to type into a phone's browser.
+func lanURLs(port int) []string {
+	var out []string
+	for _, ip := range localIPs() {
+		if strings.Contains(ip, ":") {
+			continue // IPv6 is rarely the address someone types on a phone
+		}
+		out = append(out, fmt.Sprintf("http://%s:%d/", ip, port))
+	}
+	return out
 }
 
 // isLoopbackHost reports whether a request's Host header names this machine.
@@ -152,11 +265,16 @@ func isLoopbackHost(hostHeader string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// listen binds the preferred port, scanning upward if it is taken.
-func listen(preferred int) (net.Listener, int, error) {
+// listen binds the preferred port, scanning upward if it is taken. Loopback only
+// unless lan is set, which is what keeps the map off the network by default.
+func listen(preferred int, lan bool) (net.Listener, int, error) {
+	host := "127.0.0.1"
+	if lan {
+		host = ""
+	}
 	var lastErr error
 	for port := preferred; port < preferred+portScanLen; port++ {
-		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", host, port))
 		if err == nil {
 			return ln, port, nil
 		}

@@ -1,0 +1,111 @@
+Add pinch-to-zoom and two-finger pan so the map is usable on a touchscreen.
+
+Camera input is wired for a mouse: one pointer orbits, panning needs the right
+button or a modifier key, and zoom comes only from a wheel event. Touch devices
+have neither a wheel nor a right button, so on a phone or tablet the map can be
+rotated and nothing else — you cannot get closer to a node or move off centre.
+
+The canvas already uses pointer events with touch-action:none, so the gestures
+map onto the existing camera model directly: a second pointer switches from
+orbiting to pinch-zoom plus a pan driven by the midpoint, and lifting back to one
+finger resumes orbiting from that finger's position instead of jumping. A second
+finger going down also marks the gesture as moved, so a pinch is never mistaken
+for a tap that selects a node. pointercancel is handled alongside pointerup,
+since the browser can take a gesture away mid-flight.
+
+Verified with synthetic two-finger gestures in Chromium: pinching out reduces the
+camera radius, pinching in raises it, and a two-finger drag moves the camera
+target while leaving the radius alone.
+
+diff --git a/index.html b/index.html
+index 6ead4b0..8a86ae8 100644
+--- a/index.html
++++ b/index.html
+@@ -1501,23 +1501,53 @@ function buildAxisLegend(){
+ 
+ let pointer = { down: false, moved: false, sx: 0, sy: 0, pan: false };
+ 
++// Touch: one finger orbits, two fingers pinch-zoom and pan — the gestures a
++// mouse gets from the wheel and a shift-drag, which touch has no equivalent of.
++const touches = new Map();
++let pinch = null;
++
++function pinchState(){
++  const [a, b] = [...touches.values()];
++  return { d: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x)/2, cy: (a.y + b.y)/2 };
++}
++function panCamera(dx, dy){
++  const c = R.cam;
++  const right = new THREE.Vector3().subVectors(R.camera.position, c.target).cross(R.camera.up).normalize();
++  const up = new THREE.Vector3().copy(R.camera.up);
++  c.target.addScaledVector(right, dx * c.r * 0.0011);
++  c.target.addScaledVector(up,    dy * c.r * 0.0011);
++}
++
+ canvas.addEventListener("pointerdown", e => {
+   canvas.setPointerCapture(e.pointerId);
++  touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
++  if (touches.size >= 2){
++    // Second finger down: stop orbiting, and make sure lifting is not read as a
++    // tap on whatever node happens to be under a fingertip.
++    pinch = pinchState();
++    pointer.down = false; pointer.moved = true;
++    return;
++  }
+   pointer.down = true; pointer.moved = false;
+   pointer.sx = e.clientX; pointer.sy = e.clientY;
+   pointer.pan = e.button === 2 || e.shiftKey || e.metaKey;
+ });
+ canvas.addEventListener("contextmenu", e => e.preventDefault());
+ canvas.addEventListener("pointermove", e => {
++  if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
++  if (pinch && touches.size >= 2){
++    const now = pinchState();
++    if (now.d > 0 && pinch.d > 0) R.cam.r *= pinch.d / now.d;
++    panCamera(now.cx - pinch.cx, now.cy - pinch.cy);
++    pinch = now;
++    R.applyCamera();
++    return;
++  }
+   if (pointer.down){
+     const dx = e.clientX - pointer.sx, dy = e.clientY - pointer.sy;
+     if (Math.abs(dx) + Math.abs(dy) > 3) pointer.moved = true;
+     if (pointer.pan){
+-      const c = R.cam;
+-      const right = new THREE.Vector3().subVectors(R.camera.position, c.target).cross(R.camera.up).normalize();
+-      const up = new THREE.Vector3().copy(R.camera.up);
+-      c.target.addScaledVector(right, dx * c.r * 0.0011);
+-      c.target.addScaledVector(up,    dy * c.r * 0.0011);
++      panCamera(dx, dy);
+     } else {
+       R.cam.theta -= dx * 0.0044;
+       R.cam.phi   -= dy * 0.0044;
+@@ -1548,6 +1578,16 @@ canvas.addEventListener("pointermove", e => {
+   }
+ });
+ canvas.addEventListener("pointerup", e => {
++  touches.delete(e.pointerId);
++  if (touches.size < 2) pinch = null;
++  if (touches.size === 1){
++    // Down to one finger: carry on orbiting from where that finger is rather
++    // than jumping by however far apart the two were.
++    const [only] = [...touches.values()];
++    pointer.down = true; pointer.moved = true; pointer.pan = false;
++    pointer.sx = only.x; pointer.sy = only.y;
++    return;
++  }
+   if (!pointer.moved){
+     const hit = pick(e);
+     if (hit >= 0) selectConv(hit);
+@@ -1555,6 +1595,11 @@ canvas.addEventListener("pointerup", e => {
+   }
+   pointer.down = false;
+ });
++canvas.addEventListener("pointercancel", e => {
++  touches.delete(e.pointerId);
++  if (touches.size < 2) pinch = null;
++  if (!touches.size) pointer.down = false;
++});
+ canvas.addEventListener("wheel", e => {
+   e.preventDefault();
+   R.cam.r *= Math.exp(e.deltaY * 0.00125);

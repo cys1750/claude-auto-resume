@@ -3,6 +3,8 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"testing/fstest"
 )
@@ -33,7 +35,7 @@ func TestHandlerServesAppAndRejectsForeignHosts(t *testing.T) {
 		"index.html":          {Data: []byte("<!doctype html>hello")},
 		"vendor/three.min.js": {Data: []byte("// three")},
 	}
-	h := handler(site)
+	h := handler(site, "", hostSet{})
 
 	// http.FileServer redirects /index.html to / by design; the app only ever
 	// requests / and its one vendored script.
@@ -59,13 +61,13 @@ func TestHandlerServesAppAndRejectsForeignHosts(t *testing.T) {
 }
 
 func TestListenFallsBackWhenPortIsBusy(t *testing.T) {
-	first, port, err := listen(defaultPort)
+	first, port, err := listen(defaultPort, false)
 	if err != nil {
 		t.Fatalf("first listen: %v", err)
 	}
 	defer first.Close()
 
-	second, next, err := listen(port)
+	second, next, err := listen(port, false)
 	if err != nil {
 		t.Fatalf("second listen: %v", err)
 	}
@@ -86,4 +88,67 @@ func TestEmbeddedAppIsPresent(t *testing.T) {
 			t.Errorf("%s not embedded: %v", name, err)
 		}
 	}
+}
+
+func TestSnapshotIsOnlyServedWhenOffered(t *testing.T) {
+	site := fstest.MapFS{"index.html": {Data: []byte("app")}}
+
+	// Without -snapshot the app's probe must 404 rather than reach the site's
+	// file server, which would answer with the app itself.
+	rec := httptest.NewRecorder()
+	handler(site, "", hostSet{}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47615/"+snapshotName, nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("un-offered snapshot = %d, want 404", rec.Code)
+	}
+
+	path := filepath.Join(t.TempDir(), "snap.json")
+	body := `{"app":"constellate","conversations":[]}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rec = httptest.NewRecorder()
+	handler(site, path, hostSet{}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47615/"+snapshotName, nil))
+	if rec.Code != http.StatusOK || rec.Body.String() != body {
+		t.Errorf("offered snapshot = %d %q", rec.Code, rec.Body.String())
+	}
+}
+
+func TestLanModeAnswersOnlyToItsOwnAddresses(t *testing.T) {
+	site := fstest.MapFS{"index.html": {Data: []byte("app")}}
+	hosts := hostSet{lan: true, local: map[string]bool{"192.168.1.7": true, "my-pc": true}}
+	h := handler(site, "", hosts)
+
+	serve := func(host string) int {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47615/", nil)
+		req.Host = host
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	for host, want := range map[string]int{
+		"192.168.1.7:47615": http.StatusOK,
+		"my-pc:47615":       http.StatusOK,
+		"127.0.0.1:47615":   http.StatusOK,
+		// A page that rebinds a name it owns to our address still gets nothing.
+		"attacker.example:47615": http.StatusForbidden,
+		"192.168.1.99:47615":     http.StatusForbidden,
+	} {
+		if got := serve(host); got != want {
+			t.Errorf("lan Host %q = %d, want %d", host, got, want)
+		}
+	}
+
+	// Off by default: the same LAN address is refused without -lan.
+	if got := handlerCode(t, handler(site, "", allowedHosts(false)), "192.168.1.7:47615"); got != http.StatusForbidden {
+		t.Errorf("without -lan, LAN Host = %d, want 403", got)
+	}
+}
+
+func handlerCode(t *testing.T, h http.Handler, host string) int {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47615/", nil)
+	req.Host = host
+	h.ServeHTTP(rec, req)
+	return rec.Code
 }

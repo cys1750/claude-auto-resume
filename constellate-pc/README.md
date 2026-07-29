@@ -117,6 +117,40 @@ The erase step is not optional: importing merges rather than replaces, so
 re-importing alone would leave the old conversations in place. Pruning copies
 each kept conversation through untouched, so nothing else about your map changes.
 
+## Viewing it on a phone or tablet
+
+Two things stand in the way of using the map on Android or an iPad, and both are
+handled here: the launcher only listens on loopback, and the app's camera was
+wired for a mouse.
+
+**Let other devices reach it.** `-lan` serves your network as well as this
+machine and prints the address to type into the phone:
+
+```
+Constellate.exe -lan -snapshot constellate-snapshot.json
+```
+
+Read that flag as what it is: while the window is open, anything on the network
+can read your map — no password, no encryption. It is off by default for that
+reason, and the launcher still refuses requests that arrive under any name other
+than this machine's own addresses, which is what stops a web page you happen to
+have open from reaching in. Windows will ask whether to allow the app through the
+firewall the first time; it needs the private-network box, not the public one.
+
+**Get your map onto the device.** Browser storage is per-device, so a phone opens
+to an empty map even though your PC has a full one. Export ▾ → *Snapshot* on the
+PC, then point `-snapshot` at the file: the app loads it automatically when it
+finds its own storage empty (patch `0003`). Without the flag nothing is served
+and nothing changes.
+
+**Gestures.** Patch `0002` adds pinch-to-zoom and two-finger pan, which the app
+otherwise has no equivalent of — zoom was wheel-only and panning needed a right
+button. One finger still orbits; a pinch is not mistaken for a tap.
+
+What still does not work on a phone: folder sync (the File System Access API is
+Chromium-desktop only), and dragging files onto the window to import them. Import
+through the button instead.
+
 ## Build it yourself
 
 The build fetches the upstream web app at a pinned revision, applies the patches
@@ -145,16 +179,18 @@ machine.
 
 ## Patches carried against upstream
 
-`patches/0001-paint-nodes-after-rebuild.patch` fixes a blank 3D viewport on
-first load. `rebuildAll()` never calls `draw()`, and `draw()` is what fills in
-each node's colour, size and visibility — so after loading the demo or importing
-an export, every node had size 0 and alpha 0 and the force simulation skipped
-all of them. The sidebar, clusters and timeline populated normally, which made it
-look like a GPU problem rather than a missing repaint. Adding the one `draw()`
-call takes a freshly loaded demo from 0 visible nodes to all 150.
+Each patch file explains itself in full; `patches/upstream-report.md` holds the
+first two written up as issues, ready to file against the project.
 
-This is an upstream bug, not a Windows-specific one, and it is worth reporting to
-the project.
+| Patch | What it fixes |
+| --- | --- |
+| `0001-paint-nodes-after-rebuild` | blank 3D viewport on first load: `rebuildAll()` never calls `draw()`, so every node had size 0, alpha 0 and no visibility flag, and the simulation skipped all of them. The sidebar and timeline populated normally, so it read as a GPU fault rather than a missing repaint. |
+| `0002-touch-gestures` | pinch-to-zoom and two-finger pan. Zoom was wheel-only and panning needed a right button, so a touchscreen could rotate the map and nothing else. |
+| `0003-load-served-snapshot` | lets the page load a snapshot its host offers when local storage is empty, so another device can see an existing map. Only when the cache is empty, and nothing is served by default. |
+
+`0001` and `0002` are upstream bugs rather than Windows-specific ones. `0003` is a
+capability upstream has no reason to want by default and exists to serve
+`-snapshot`.
 
 ## Layout
 
@@ -167,6 +203,7 @@ the project.
 | `fetch-web.sh` | fetches + patches the upstream web app into `web/` |
 | `build.sh` / `build.ps1` | build the executable |
 | `patches/` | the fixes carried against upstream, each explaining itself |
+| `patches/upstream-report.md` | those fixes written up as issues to file upstream |
 
 `web/` and `dist/` are build products and are not committed.
 
