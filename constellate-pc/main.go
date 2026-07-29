@@ -388,6 +388,13 @@ const (
 	snapshotSidecar = snapshotName
 )
 
+// Windows hides known extensions by default, so someone creating enable-lan.txt
+// through Explorer very easily ends up with enable-lan or enable-lan.txt.txt.
+// Accepting all three is the difference between this working and looking broken.
+func lanSidecarNames() []string {
+	return []string{lanSidecar, "enable-lan", lanSidecar + ".txt"}
+}
+
 // resolveSidecars turns those files into settings, returning what it did so the
 // user can see why the launcher behaves differently from a bare double-click.
 func resolveSidecars(dir string, lan *bool, snapshot *string) []string {
@@ -396,19 +403,43 @@ func resolveSidecars(dir string, lan *bool, snapshot *string) []string {
 	}
 	var notes []string
 	if !*lan {
-		if _, err := os.Stat(filepath.Join(dir, lanSidecar)); err == nil {
-			*lan = true
-			notes = append(notes, "Found "+lanSidecar+" — serving other devices on this network.")
+		for _, name := range lanSidecarNames() {
+			if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+				*lan = true
+				notes = append(notes, "Found "+name+" — serving other devices on this network.")
+				break
+			}
 		}
 	}
 	if *snapshot == "" {
-		candidate := filepath.Join(dir, snapshotSidecar)
-		if _, err := os.Stat(candidate); err == nil {
-			*snapshot = candidate
-			notes = append(notes, "Found "+snapshotSidecar+" — offering it to devices that have no map of their own.")
+		if found := findSnapshotBeside(dir); found != "" {
+			*snapshot = found
+			notes = append(notes, "Found "+filepath.Base(found)+" — offering it to devices that have no map of their own.")
 		}
 	}
 	return notes
+}
+
+// findSnapshotBeside picks the newest constellate-snapshot*.json in dir, so a
+// second export saved as "constellate-snapshot (1).json" is still recognised —
+// and is the one used, since it is the more recent map.
+func findSnapshotBeside(dir string) string {
+	matches, err := filepath.Glob(filepath.Join(dir, "constellate-snapshot*.json"))
+	if err != nil {
+		return ""
+	}
+	var newest string
+	var newestAt time.Time
+	for _, m := range matches {
+		fi, err := os.Stat(m)
+		if err != nil || fi.IsDir() {
+			continue
+		}
+		if newest == "" || fi.ModTime().After(newestAt) {
+			newest, newestAt = m, fi.ModTime()
+		}
+	}
+	return newest
 }
 
 // exeDir is where the executable itself lives, which is where someone who cannot

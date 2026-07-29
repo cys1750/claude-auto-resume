@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 	"testing/fstest"
+	"time"
 )
 
 func TestIsLoopbackHost(t *testing.T) {
@@ -185,5 +186,43 @@ func TestSidecarFilesStandInForFlags(t *testing.T) {
 	}
 	if snapshot != "C:/elsewhere/snap.json" {
 		t.Errorf("snapshot flag was overwritten with %q", snapshot)
+	}
+}
+
+// Explorer hides known extensions, so the file a user believes they created is
+// often not the name they typed.
+func TestSidecarToleratesExplorerFilenames(t *testing.T) {
+	for _, name := range []string{"enable-lan.txt", "enable-lan", "enable-lan.txt.txt"} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		lan, snapshot := false, ""
+		resolveSidecars(dir, &lan, &snapshot)
+		if !lan {
+			t.Errorf("%q did not enable lan mode", name)
+		}
+	}
+
+	// A re-downloaded snapshot keeps its "(1)" and is newer, so it should win.
+	dir := t.TempDir()
+	older := filepath.Join(dir, "constellate-snapshot.json")
+	newer := filepath.Join(dir, "constellate-snapshot (1).json")
+	for _, f := range []string{older, newer} {
+		if err := os.WriteFile(f, []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(older, old, old); err != nil {
+		t.Fatal(err)
+	}
+	lan, snapshot := false, ""
+	resolveSidecars(dir, &lan, &snapshot)
+	if snapshot != newer {
+		t.Errorf("snapshot = %q, want the newer %q", snapshot, newer)
+	}
+	if lan {
+		t.Error("a snapshot file alone must not expose anything to the network")
 	}
 }
