@@ -13,7 +13,6 @@
 package main
 
 import (
-	"embed"
 	"errors"
 	"flag"
 	"fmt"
@@ -30,13 +29,9 @@ import (
 	"strings"
 	"syscall"
 	"time"
-)
 
-// The web app is fetched by the build script (see fetch-web.sh / build.ps1) and
-// compiled in, so the shipped executable needs nothing alongside it.
-//
-//go:embed all:web
-var embeddedWeb embed.FS
+	"constellate-pc/site"
+)
 
 // The loopback port is part of the browser origin, and the origin is what
 // IndexedDB keys its storage on. It has to stay stable across launches or the
@@ -64,11 +59,11 @@ func main() {
 		defer logFile.Close()
 	}
 
-	site, err := fs.Sub(embeddedWeb, "web")
+	app, err := site.Files()
 	if err != nil {
 		fatal("The embedded copy of the web app is unreadable: %v", err)
 	}
-	if _, err := fs.Stat(site, "index.html"); err != nil {
+	if _, err := fs.Stat(app, "index.html"); err != nil {
 		fatal("This executable was built without the web app embedded.\n\n" +
 			"Run fetch-web.sh (or build.ps1, which does it for you) to download\n" +
 			"the Constellate web app into constellate-pc/web, then rebuild.")
@@ -98,7 +93,7 @@ func main() {
 
 	url := fmt.Sprintf("http://127.0.0.1:%d/", actualPort)
 	hosts := allowedHosts(*lan)
-	server := &http.Server{Handler: handler(site, *snapshotPath, hosts)}
+	server := &http.Server{Handler: handler(app, *snapshotPath, hosts)}
 	go func() {
 		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("server stopped: %v", err)

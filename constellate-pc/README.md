@@ -178,13 +178,36 @@ PC, then point `-snapshot` at the file: the app loads it automatically when it
 finds its own storage empty (patch `0003`). Without the flag nothing is served
 and nothing changes.
 
-**Gestures.** Patch `0002` adds pinch-to-zoom and two-finger pan, which the app
-otherwise has no equivalent of — zoom was wheel-only and panning needed a right
-button. One finger still orbits; a pinch is not mistaken for a tap.
+**Gestures and layout.** Patch `0002` adds pinch-to-zoom and two-finger pan, which
+the app otherwise has no equivalent of — zoom was wheel-only and panning needed a
+right button. One finger still orbits; a pinch is not mistaken for a tap. Patches
+`0004` and `0006` make the layout fit: the sidebar starts collapsed below 700px,
+and the header stops pushing its own buttons off the screen.
 
 What still does not work on a phone: folder sync (the File System Access API is
 Chromium-desktop only), and dragging files onto the window to import them. Import
 through the button instead.
+
+## One file for the phone, with no server at all
+
+`Make-Phone-Bundle.exe` writes the whole map into a single self-contained `.html`
+— the app, Three.js and your snapshot inlined, nothing left to fetch. Move that
+one file to a phone however you already move files, and open it in Chrome.
+
+No `-lan`, no firewall rule, nothing exposed on any network, and it works offline
+on cellular. It is also the answer for a remote-desktop or VDI session, where the
+phone has no route to the machine the map lives on.
+
+1. Export ▾ → *Snapshot* in Constellate.
+2. Put `constellate-snapshot.json` next to `Make-Phone-Bundle.exe` and double-click
+   it. With no arguments it also looks in `Downloads` and on the `Desktop`, newest
+   first, and writes `constellate-phone.html` beside itself.
+3. Copy that file to the phone and open it.
+
+It is a frozen copy: no importing on the phone, and you regenerate it when you want
+newer data. About 0.7 MB of app plus the size of your snapshot.
+
+Flags, if a terminal is available: `-snapshot <file>` and `-out <file>`.
 
 ## Build it yourself
 
@@ -215,17 +238,20 @@ machine.
 ## Patches carried against upstream
 
 Each patch file explains itself in full; `patches/upstream-report.md` holds the
-first two written up as issues, ready to file against the project.
+upstream-facing ones written up as issues, ready to file against the project.
 
 | Patch | What it fixes |
 | --- | --- |
 | `0001-paint-nodes-after-rebuild` | blank 3D viewport on first load: `rebuildAll()` never calls `draw()`, so every node had size 0, alpha 0 and no visibility flag, and the simulation skipped all of them. The sidebar and timeline populated normally, so it read as a GPU fault rather than a missing repaint. |
 | `0002-touch-gestures` | pinch-to-zoom and two-finger pan. Zoom was wheel-only and panning needed a right button, so a touchscreen could rotate the map and nothing else. |
-| `0003-load-served-snapshot` | lets the page load a snapshot its host offers when local storage is empty, so another device can see an existing map. Only when the cache is empty, and nothing is served by default. |
+| `0003-load-offered-snapshot` | lets the page load a snapshot inlined into it or served alongside it, when local storage is empty. This is what carries a map to another device; nothing is offered by default. |
+| `0004-collapse-sidebar-on-narrow-screens` | the sidebar is a fixed 248px with no media queries, leaving 164px of map on a phone. Starts collapsed below 700px. |
+| `0005-remeasure-canvas-when-timeline-appears` | clicks and taps missed the node they were aimed at. Revealing the timeline shortens the canvas and nothing re-measured, so `CW`/`CH` and the camera aspect described a canvas taller than the real one — 770 against 708 at 1280x820, putting the ray ~79 world units off target and stretching the render. |
+| `0006-header-fits-a-phone` | at 412px the header tagline wrapped onto three lines and pushed Export and Help off the right edge. |
 
-`0001` and `0002` are upstream bugs rather than Windows-specific ones. `0003` is a
-capability upstream has no reason to want by default and exists to serve
-`-snapshot`.
+`0001`, `0002`, `0005` and `0006` are upstream bugs rather than Windows-specific
+ones, and `0004` is an upstream shortcoming. `0003` is the only one that exists for
+this launcher's sake, serving `-snapshot` and the phone bundle.
 
 ## Layout
 
@@ -236,15 +262,17 @@ capability upstream has no reason to want by default and exists to serve
 | `console_windows.go` | attaches the launching terminal's console so flags can report |
 | `main_test.go` | tests for host checking, serving, and port fallback |
 | `cmd/codesessions/` | `Export-CodeSessions.exe`: transcripts → snapshot, and `-prune` |
+| `cmd/bundle/` | `Make-Phone-Bundle.exe`: the map as one self-contained .html |
+| `site/` | the web app, staged by `fetch-web.sh`, compiled into both binaries |
 | `fetch-web.sh` | fetches + patches the upstream web app into `web/` |
 | `build.sh` / `build.ps1` | build the executable |
 | `patches/` | the fixes carried against upstream, each explaining itself |
 | `patches/upstream-report.md` | those fixes written up as issues to file upstream |
 
-`web/` and `dist/` are build products and are not committed.
+`site/web/` and `dist/` are build products and are not committed.
 
 ## Credits
 
 Constellate is by [JCarterJohnson](https://github.com/JCarterJohnson/constellate),
 MIT licensed; the upstream licence is copied into the build as
-`web/UPSTREAM-LICENSE`. This directory only packages it for Windows.
+`site/web/UPSTREAM-LICENSE`. This directory only packages it for Windows.

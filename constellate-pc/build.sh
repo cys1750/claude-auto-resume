@@ -24,10 +24,13 @@ for arch in "${arches[@]}"; do
   # -H=windowsgui: no console window on double-click. -s -w: strip debug info.
   CGO_ENABLED=0 GOOS=windows GOARCH="$arch" \
     go build -trimpath -ldflags '-s -w -H=windowsgui' -o "dist/Constellate$suffix.exe" .
-  # The exporter is a console tool, so it keeps its console and prints normally.
-  echo "Building dist/Export-CodeSessions$suffix.exe (windows/$arch)..."
-  CGO_ENABLED=0 GOOS=windows GOARCH="$arch" \
-    go build -trimpath -ldflags '-s -w' -o "dist/Export-CodeSessions$suffix.exe" ./cmd/codesessions
+  # These two are console tools, so they keep their console and print normally.
+  for tool in "Export-CodeSessions:./cmd/codesessions" "Make-Phone-Bundle:./cmd/bundle"; do
+    name="${tool%%:*}"; pkg="${tool##*:}"
+    echo "Building dist/$name$suffix.exe (windows/$arch)..."
+    CGO_ENABLED=0 GOOS=windows GOARCH="$arch" \
+      go build -trimpath -ldflags '-s -w' -o "dist/$name$suffix.exe" "$pkg"
+  done
 done
 
 echo

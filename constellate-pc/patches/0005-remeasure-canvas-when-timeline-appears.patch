@@ -1,0 +1,40 @@
+Re-measure the canvas when the timeline appears, so clicks hit what they aim at.
+
+CW and CH are read from the canvas in R.resize(), which runs at boot, on window
+resize, and when the sidebar is toggled. rebuildAll() then reveals the timeline —
+`$("timeline").style.display = "block"` — which shortens the canvas by the
+timeline's height, and nothing re-measures. Since the timeline is shown whenever
+there is data, every session runs with CW/CH describing a canvas taller than the
+one on screen.
+
+Two things break as a result. The renderer keeps drawing into the taller buffer
+at the old camera aspect, so the map is drawn slightly stretched vertically and
+the browser scales it down to fit. And pick() maps a click to normalised device
+coordinates by dividing by the stale CH, so the ray goes somewhere other than
+where the pointer is: measured at 1280x820, CH was 770 against a canvas 708 tall,
+putting the ray about 79 world units off a node it was aimed dead centre at.
+Clicking a conversation, hovering for its tooltip, and the label positions
+computed by R.project() are all off by that margin.
+
+It reads as "clicking nodes does nothing" rather than as a sizing bug, which is
+probably why it survives: the offset is only about 9% of the height, so the map
+still looks right and the labels look merely untidy.
+
+Verified before and after at both desktop and phone viewports: CH now matches the
+canvas height exactly, a ray aimed at a node's projected centre passes within a
+fraction of a unit of it instead of 79, and tapping a node opens its conversation.
+
+diff --git a/index.html b/index.html
+index 184d2c6..7d7c140 100644
+--- a/index.html
++++ b/index.html
+@@ -1831,6 +1831,9 @@ let searchBlobs = [];
+ async function rebuildAll(fresh){
+   $("empty").style.display = S.convs.length ? "none" : "flex";
+   $("timeline").style.display = S.convs.length ? "block" : "none";
++  // Showing the timeline shortens the canvas, and CW/CH plus the camera aspect
++  // have to follow it — picking and label placement both divide by them.
++  R.resize();
+   if (!S.convs.length){ S.nodes = []; S.edges = []; G.N = 0; if (R.points) R.points.visible = false; if (R.lines) R.lines.visible = false; G.needsRender = true; updateCounts(); return; }
+   toast(`Linking ${S.convs.length.toLocaleString()} conversations by meaning…`, { sticky: true });
+   await yieldUI();

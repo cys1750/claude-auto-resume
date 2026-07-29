@@ -1,0 +1,27 @@
+Start with the sidebar collapsed on a narrow screen.
+
+The layout has no media queries and #side is a fixed 248px, so on a phone-width
+viewport the sidebar takes most of the window and the 3D map is left with a strip
+too narrow to read — 164px of 412px on a Pixel-sized screen. The map is the
+point of the app, and a first-time visitor on a phone sees mostly filter
+controls.
+
+The header toggle already exists and #side.hidden already works, so this only
+decides the initial state: collapsed below 700px, unchanged above it, and one tap
+brings the sidebar back. Applied before the first resize() so the canvas is
+measured at its full width from the start.
+
+diff --git a/index.html b/index.html
+index 78595d7..184d2c6 100644
+--- a/index.html
++++ b/index.html
+@@ -2377,6 +2377,9 @@ async function loadOfferedSnapshot(){
+ }
+ 
+ (async function boot(){
++  // The sidebar is a fixed 248px, which on a phone leaves almost no map. Start it
++  // collapsed on a narrow screen; the toggle in the header brings it back.
++  if (window.innerWidth < 700) $("side").classList.add("hidden");
+   resize();
+   try {
+     await idb.open();

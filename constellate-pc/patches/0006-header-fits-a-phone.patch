@@ -1,0 +1,35 @@
+Keep the header on one line at phone width.
+
+#topbar is a single flex row sized for a desktop — logo with tagline, search,
+conversation totals, import, export, help — and there are no media queries. At
+412px the tagline "every conversation, one map" wraps onto three lines and trebles
+the row's height, and #counts, which is nowrap with margin-left:auto, pushes the
+Export menu and the Help button clean off the right edge: measured at 383->443 and
+449->465 in a 412px viewport.
+
+Below 700px the tagline and the totals are hidden and the row's padding and gap
+tighten, which leaves every control on one line with the search box free to take
+the space the totals were using. The totals are the right thing to drop: the
+sidebar already lists counts per provider, while Export is the only route to a
+snapshot or to erasing local data. Nothing changes above 700px.
+
+diff --git a/index.html b/index.html
+index 7d7c140..92f08ed 100644
+--- a/index.html
++++ b/index.html
+@@ -49,6 +49,15 @@ input[type=checkbox]{accent-color:var(--accent);width:14px;height:14px}
+   border-bottom:1px solid var(--sep)}
+ #logo{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;letter-spacing:.1px}
+ #logo .sub{color:var(--label3);font-weight:400;font-size:11px}
++/* At phone width the header has room for the logo, search and the buttons, and
++   not much else. The tagline otherwise wraps to three lines and the totals, which
++   are nowrap and margin-left:auto, push Export and Help off the right edge. The
++   sidebar carries per-provider counts, so the totals are what gives way. */
++@media (max-width: 700px){
++  #logo .sub{display:none}
++  #counts{display:none}
++  #topbar{gap:6px;padding:0 8px}
++}
+ #searchbox{flex:1;max-width:400px;position:relative;margin:0 4px}
+ #search{width:100%;padding-left:26px;height:28px;border-radius:var(--r-field);font-size:13px}
+ #search::placeholder{color:var(--label3)}

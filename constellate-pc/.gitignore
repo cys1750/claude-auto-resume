@@ -1,4 +1,4 @@
 # Fetched at build time from upstream, not vendored here.
-web/
+site/web/
 # Build output.
 dist/

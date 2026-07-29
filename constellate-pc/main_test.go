@@ -8,6 +8,8 @@ import (
 	"testing"
 	"testing/fstest"
 	"time"
+
+	"constellate-pc/site"
 )
 
 func TestIsLoopbackHost(t *testing.T) {
@@ -85,7 +87,7 @@ func TestListenFallsBackWhenPortIsBusy(t *testing.T) {
 func TestEmbeddedAppIsPresent(t *testing.T) {
 	// Guards against shipping a build whose fetch step never ran.
 	for _, name := range []string{"web/index.html", "web/vendor/three.min.js"} {
-		if _, err := embeddedWeb.ReadFile(name); err != nil {
+		if _, err := site.FS.ReadFile(name); err != nil {
 			t.Errorf("%s not embedded: %v", name, err)
 		}
 	}

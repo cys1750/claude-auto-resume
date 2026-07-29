@@ -32,11 +32,11 @@ for patch in patches/*.patch; do
 done
 shopt -u nullglob
 
-rm -rf web
-mkdir -p web/vendor
-cp "$work/index.html" web/index.html
-cp "$work/vendor/three.min.js" web/vendor/three.min.js
-cp "$work/LICENSE" web/UPSTREAM-LICENSE
-git -C "$work" rev-parse HEAD > web/UPSTREAM-REVISION
+rm -rf site/web
+mkdir -p site/web/vendor
+cp "$work/index.html" site/web/index.html
+cp "$work/vendor/three.min.js" site/web/vendor/three.min.js
+cp "$work/LICENSE" site/web/UPSTREAM-LICENSE
+git -C "$work" rev-parse HEAD > site/web/UPSTREAM-REVISION
 
-echo "Web app staged in ./web (upstream revision $(cat web/UPSTREAM-REVISION))."
+echo "Web app staged in ./site/web (upstream revision $(cat site/web/UPSTREAM-REVISION))."

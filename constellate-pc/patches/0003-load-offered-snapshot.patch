@@ -1,0 +1,75 @@
+Load a snapshot offered by the page, either inlined or served alongside it.
+
+Browser storage is per-device and per-origin, so opening the map on another
+device — a phone — starts from nothing even though the machine that built the map
+has all of it. There is no way to carry a map across short of copying a snapshot
+onto the device and importing it by hand, which on a phone means fighting the
+file picker.
+
+Two sources are checked, and only when the local cache turned up empty. An
+element with id constellate-snapshot is read first, which is how a single-file
+bundle carries its own data and the only option that works from file:// where
+fetch reaches nothing. Otherwise constellate-snapshot.json is fetched from
+alongside the page, which is what the Windows launcher serves with -snapshot.
+
+Neither exists by default: a plain checkout has no such element, the fetch 404s,
+and the welcome panel appears exactly as before. Deliberately narrow — it never
+runs when the cache already holds conversations, so it cannot overwrite or merge
+into a map built on the device itself.
+
+diff --git a/index.html b/index.html
+index 8a86ae8..78595d7 100644
+--- a/index.html
++++ b/index.html
+@@ -2340,6 +2340,42 @@ $("btn-syncfolder").onclick = connectSyncFolder;
+ 
+ /* ---------------- boot ---------------- */
+ 
++// A snapshot supplied by whatever delivered this page — inlined into the file
++// itself, or sitting alongside it. Browser storage is per-device, so a phone or
++// tablet opening this map starts with an empty cache; using an offered snapshot
++// is what lets a map built on one machine be read on another. Nothing is offered
++// by default and neither source exists in a plain checkout, so the welcome panel
++// still appears exactly as before.
++async function adoptSnapshot(json){
++  const convs = parseUniversal(json);
++  if (!convs.length) return false;
++  S.convs = convs.sort((a,b)=>a.created-b.created);
++  try { await idb.putAll(S.convs); } catch (e) { /* file:// has no IndexedDB; in-memory is fine */ }
++  toast(`Loaded ${S.convs.length.toLocaleString()} conversations from this file.`);
++  await rebuildAll(true);
++  return true;
++}
++
++async function loadOfferedSnapshot(){
++  // Inlined by a bundler: works from file://, where fetch cannot reach anything.
++  const inline = document.getElementById("constellate-snapshot");
++  if (inline && inline.textContent.trim()){
++    try {
++      return await adoptSnapshot(JSON.parse(inline.textContent));
++    } catch (e){
++      console.error("embedded snapshot could not be read", e);
++    }
++  }
++  // Served next to the page by a local launcher. A 404 is the normal case.
++  try {
++    const res = await fetch("constellate-snapshot.json", { cache: "no-store" });
++    if (!res.ok) return false;
++    return await adoptSnapshot(await res.json());
++  } catch (e) {
++    return false;
++  }
++}
++
+ (async function boot(){
+   resize();
+   try {
+@@ -2351,7 +2387,7 @@ $("btn-syncfolder").onclick = connectSyncFolder;
+   if (S.convs.length){
+     toast(`Restored ${S.convs.length.toLocaleString()} conversations from local cache.`);
+     await rebuildAll(true);
+-  } else {
++  } else if (!(await loadOfferedSnapshot())){
+     $("empty").style.display = "flex";
+   }
+   syncBoot();

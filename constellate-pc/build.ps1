@@ -37,12 +37,12 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Failed to apply $($patch.Name)." }
     }
 
-    if (Test-Path web) { Remove-Item -Recurse -Force web }
-    New-Item -ItemType Directory -Force -Path web\vendor | Out-Null
-    Copy-Item "$work\index.html"             web\index.html
-    Copy-Item "$work\vendor\three.min.js"    web\vendor\three.min.js
-    Copy-Item "$work\LICENSE"                web\UPSTREAM-LICENSE
-    (git -C $work rev-parse HEAD) | Set-Content -NoNewline web\UPSTREAM-REVISION
+    if (Test-Path site\web) { Remove-Item -Recurse -Force site\web }
+    New-Item -ItemType Directory -Force -Path site\web\vendor | Out-Null
+    Copy-Item "$work\index.html"             site\web\index.html
+    Copy-Item "$work\vendor\three.min.js"    site\web\vendor\three.min.js
+    Copy-Item "$work\LICENSE"                site\web\UPSTREAM-LICENSE
+    (git -C $work rev-parse HEAD) | Set-Content -NoNewline site\web\UPSTREAM-REVISION
 
     Write-Host 'Building Constellate.exe...'
     New-Item -ItemType Directory -Force -Path dist | Out-Null
@@ -52,14 +52,19 @@ try {
     go build -trimpath -ldflags '-s -w -H=windowsgui' -o dist\Constellate.exe .
     if ($LASTEXITCODE -ne 0) { throw 'go build failed.' }
 
-    # The exporter is a console tool, so it keeps its console and prints normally.
+    # These two are console tools, so they keep their console and print normally.
     Write-Host 'Building Export-CodeSessions.exe...'
     go build -trimpath -ldflags '-s -w' -o dist\Export-CodeSessions.exe .\cmd\codesessions
+    if ($LASTEXITCODE -ne 0) { throw 'go build failed.' }
+
+    Write-Host 'Building Make-Phone-Bundle.exe...'
+    go build -trimpath -ldflags '-s -w' -o dist\Make-Phone-Bundle.exe .\cmd\bundle
     if ($LASTEXITCODE -ne 0) { throw 'go build failed.' }
 
     Write-Host ''
     Write-Host 'Built dist\Constellate.exe — double-click it to run Constellate.' -ForegroundColor Green
     Write-Host 'Built dist\Export-CodeSessions.exe — run it to put Claude Code sessions on the map.' -ForegroundColor Green
+    Write-Host 'Built dist\Make-Phone-Bundle.exe — run it to get a single .html for your phone.' -ForegroundColor Green
 }
 finally {
     if (Test-Path $work) { Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue }
