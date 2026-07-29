@@ -52,8 +52,14 @@ try {
     go build -trimpath -ldflags '-s -w -H=windowsgui' -o dist\Constellate.exe .
     if ($LASTEXITCODE -ne 0) { throw 'go build failed.' }
 
+    # The exporter is a console tool, so it keeps its console and prints normally.
+    Write-Host 'Building Export-CodeSessions.exe...'
+    go build -trimpath -ldflags '-s -w' -o dist\Export-CodeSessions.exe .\cmd\codesessions
+    if ($LASTEXITCODE -ne 0) { throw 'go build failed.' }
+
     Write-Host ''
     Write-Host 'Built dist\Constellate.exe — double-click it to run Constellate.' -ForegroundColor Green
+    Write-Host 'Built dist\Export-CodeSessions.exe — run it to put Claude Code sessions on the map.' -ForegroundColor Green
 }
 finally {
     if (Test-Path $work) { Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue }

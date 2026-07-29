@@ -48,6 +48,75 @@ origin is what your imported map is stored against. If something else already
 holds it the launcher scans upward and logs the change — a map imported on one
 port is not visible from another.
 
+## Putting Claude Code sessions on the map
+
+Your claude.ai export contains chat only. Claude Code sessions live on your own
+disk, as one JSONL file per session under `%USERPROFILE%\.claude\projects` — the
+same folders `Claude-AutoResume.ps1` scans.
+
+Constellate cannot read those files even though it accepts `.jsonl`: its parser
+expects one *conversation* per line with a `messages` array, while Claude Code
+writes one *event* per line. Every line fails the check and you get an import
+with nothing in it. `Export-CodeSessions.exe` rewrites them into the snapshot
+schema Constellate does understand.
+
+```
+Export-CodeSessions.exe                    # write claude-code-sessions.json
+```
+
+Then drag that file onto the Constellate window. Sessions arrive under their own
+`claude-code` provider, so you can toggle them on and off like any other source.
+Titles come out as `project — first prompt` (or the `/compact` summary when a
+session has one), which is what you see on the node labels.
+
+Only prose is exported. Tool calls, tool output, thinking blocks and subagent
+transcripts are dropped, because a session's file contents and command output
+would otherwise dominate the topic model that decides where it sits on the map.
+`-include-tools` adds a list of tool names per session, `-include-sidechains`
+folds subagent work in.
+
+Useful flags:
+
+| Flag | What it does |
+| --- | --- |
+| `-list` | show the projects found, with session counts and dates; write nothing |
+| `-exclude <text>` | skip projects whose path contains `<text>` (repeatable) |
+| `-project <text>` | only projects whose path contains `<text>` (repeatable) |
+| `-since 2026-01-01` | skip anything older |
+| `-min-messages 2` | skip sessions shorter than this (default 2) |
+| `-provider claude` | file them under an existing provider instead of `claude-code` |
+| `-out <file>` | where to write |
+
+Start with `-list` to see what you have, then exclude what you don't want on the
+map:
+
+```
+Export-CodeSessions.exe -list
+Export-CodeSessions.exe -exclude work-repo -exclude scratch -since 2026-01-01
+```
+
+## Removing conversations
+
+The app itself is all-or-nothing: **Export ▾ → Erase all local data** wipes
+everything, and there is no per-conversation or per-project delete. Provider
+checkboxes and cluster filters only hide nodes; the data stays.
+
+For code sessions, the filters above are the clean answer — leave a project out
+of the export and it never reaches the map.
+
+For anything already imported, including chats, prune a snapshot and re-import:
+
+1. **Export ▾ → Snapshot** in Constellate, which saves `constellate-snapshot.json`.
+2. `Export-CodeSessions.exe -prune constellate-snapshot.json -exclude "tax"`
+   — the same `-project`, `-exclude` and `-since` filters apply, matched against
+   the conversation title. It prints what it removed and writes
+   `constellate-pruned.json`.
+3. **Export ▾ → Erase all local data**, then drag the pruned file onto the window.
+
+The erase step is not optional: importing merges rather than replaces, so
+re-importing alone would leave the old conversations in place. Pruning copies
+each kept conversation through untouched, so nothing else about your map changes.
+
 ## Build it yourself
 
 The build fetches the upstream web app at a pinned revision, applies the patches
@@ -94,6 +163,7 @@ the project.
 | `main.go` | the launcher: embeds the app, serves loopback, opens the window |
 | `dialog_windows.go` | fatal-error message box (the exe has no console) |
 | `main_test.go` | tests for host checking, serving, and port fallback |
+| `cmd/codesessions/` | `Export-CodeSessions.exe`: transcripts → snapshot, and `-prune` |
 | `fetch-web.sh` | fetches + patches the upstream web app into `web/` |
 | `build.sh` / `build.ps1` | build the executable |
 | `patches/` | the fixes carried against upstream, each explaining itself |
