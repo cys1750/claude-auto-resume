@@ -215,15 +215,24 @@ Flags, if a terminal is available: `-snapshot <file>` and `-out <file>`.
 running and writes a `.webm`. It starts `Constellate.exe` itself on a loopback
 port, so nothing but Node is needed alongside the exe.
 
+Put `record-demo.js` in the same folder as `Constellate.exe`, then, once:
+
 ```powershell
-cd constellate-pc\demo
 npm install playwright
 npx playwright install chromium
-
-node record-demo.js --snapshot "$env:USERPROFILE\Downloads\constellate-snapshot.json" ^
-                    --topics "pandas|kubernetes|deploy" ^
-                    --code-sessions ..\claude-code-sessions.json
 ```
+
+Double-click `Constellate.exe` and leave it open — the script records the copy
+that is already running, which is the only route on a machine that refuses to let
+a script start an executable. Then:
+
+```powershell
+node record-demo.js --snapshot "$env:USERPROFILE\Downloads\constellate-snapshot.json" --topics "pandas|kubernetes|deploy"
+```
+
+With nothing running on the port it starts `Constellate.exe` itself instead, and
+shuts it down afterwards. `--code-sessions claude-code-sessions.json` adds the
+Claude Code import beat.
 
 It prints a verified checklist as it goes — map imported, zoom, orbit, search,
 conversation opened, axes layout, code sessions imported, no console errors — and

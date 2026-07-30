@@ -23,7 +23,7 @@ const http = require('http');
 
 function parseArgs(argv) {
   const args = {
-    exe: '', snapshot: '', codeSessions: '', topics: '', out: 'demo',
+    exe: '', snapshot: '', codeSessions: '', topics: '', out: '.',
     port: 47615, width: 1280, height: 800, hideSimilar: false, keepOpen: false,
   };
   for (let i = 2; i < argv.length; i++) {
@@ -56,7 +56,7 @@ Usage: node record-demo.js --snapshot <file> [options]
                            Omit and the reader beat is skipped (nothing opened).
   --code-sessions <file>   Export-CodeSessions.exe output, imported on camera
   --exe <file>             Constellate.exe (default: ../dist, then alongside)
-  --out <dir>              output directory (default: demo)
+  --out <dir>              where to write the .webm (default: current folder)
   --port <n>               loopback port (default: 47615)
   --width/--height <n>     recording size (default: 1280x800)
   --hide-similar           hide the reader's "similar conversations" list
@@ -102,7 +102,6 @@ async function waitForServer(url, tries = 40) {
   for (const [flag, file] of [['--snapshot', args.snapshot], ['--code-sessions', args.codeSessions]]) {
     if (file && !fs.existsSync(file)) fail(`${flag} not found: ${file}`);
   }
-  const exe = findExe(args.exe);
   const url = `http://127.0.0.1:${args.port}/`;
   fs.mkdirSync(args.out, { recursive: true });
 
@@ -111,17 +110,36 @@ async function waitForServer(url, tries = 40) {
     console.log('No --topics given: no conversation will be opened on camera.');
   }
 
-  // Serve the app ourselves so the recording is of a known, empty-cache state.
-  console.log(`Starting ${path.basename(exe)} on port ${args.port}...`);
-  const server = spawn(exe, ['-no-browser', '-port', String(args.port)], { stdio: 'ignore' });
-  server.on('error', (e) => fail(`Could not start ${exe}: ${e.message}`));
-  const stop = () => { try { server.kill(); } catch {} };
-  process.on('exit', stop);
-  process.on('SIGINT', () => { stop(); process.exit(130); });
+  // If Constellate is already running, record against that. Managed Windows
+  // machines often refuse to let a script start an executable at all, so
+  // attaching to one the user double-clicked themselves is the reliable path.
+  let server = null;
+  const stop = () => { if (server) { try { server.kill(); } catch {} } };
 
-  if (!await waitForServer(url)) {
-    stop();
-    fail(`${url} never came up. Is another copy already running, or the port taken?`);
+  if (await get(url) === 200) {
+    console.log(`Found Constellate already running on port ${args.port} — recording that.`);
+  } else {
+    const exe = findExe(args.exe);
+    console.log(`Starting ${path.basename(exe)} on port ${args.port}...`);
+    server = spawn(exe, ['-no-browser', '-port', String(args.port)], { stdio: 'ignore' });
+    server.on('error', (e) => {
+      const blocked = ['EPERM', 'EACCES'].includes(e.code);
+      fail(blocked
+        ? `Windows refused to let this script start ${path.basename(exe)} (${e.code}).\n` +
+          'Your machine blocks executables launched from a shell.\n\n' +
+          'Double-click Constellate.exe yourself, leave it open, then run this again —\n' +
+          'it will record the copy that is already running.'
+        : `Could not start ${exe}: ${e.message}`);
+    });
+    process.on('exit', stop);
+    process.on('SIGINT', () => { stop(); process.exit(130); });
+
+    if (!await waitForServer(url)) {
+      stop();
+      fail(`${url} never came up.\n\n` +
+        'If your machine blocks executables started from a shell, double-click\n' +
+        'Constellate.exe yourself, leave it open, and run this again.');
+    }
   }
 
   const results = [];
@@ -188,6 +206,10 @@ async function waitForServer(url, tries = 40) {
     await page.addStyleTag({ content: '#rsimilar{display:none !important}' });
   }
 
+  const alreadyLoaded = await page.evaluate(() => S.convs.length);
+  if (alreadyLoaded) {
+    console.log(`  note: this browser profile already holds ${alreadyLoaded} conversations; the snapshot merges into them.`);
+  }
   await say('Constellate — one executable, nothing to install', 2400);
   await say('Import an export: ChatGPT, Claude, Gemini or markdown', 1900);
   await page.locator('#filepick').setInputFiles(args.snapshot);
