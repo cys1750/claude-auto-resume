@@ -1,0 +1,363 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Constellate — choose what stays on the map</title>
+<style>
+  :root{
+    --bg:#0b0b0d; --panel:rgba(24,24,28,.92); --sep:#2a2a31; --ink:#f2f2f4;
+    --dim:#a0a0ab; --dim2:#6f6f7a; --accent:#4da3ff; --drop:#ff6b5a; --keep:#4ec98a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+  header{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;gap:12px;align-items:center;
+    padding:12px 18px;background:var(--panel);border-bottom:1px solid var(--sep);backdrop-filter:blur(20px)}
+  h1{font-size:15px;font-weight:600;margin:0}
+  h1 span{color:var(--dim2);font-weight:400}
+  #tally{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--dim)}
+  #tally b{color:var(--ink)}
+  button{background:#25252c;color:var(--ink);border:1px solid var(--sep);border-radius:7px;
+    padding:7px 12px;font:inherit;font-size:13px;cursor:pointer}
+  button:hover{background:#2f2f38}
+  button.primary{background:var(--accent);border-color:transparent;color:#07131f;font-weight:600}
+  button.primary:disabled{opacity:.45;cursor:default}
+  main{display:grid;grid-template-columns:minmax(320px,1fr) minmax(340px,1.1fr);gap:18px;padding:18px;align-items:start}
+  @media (max-width:900px){main{grid-template-columns:1fr}}
+  section{background:var(--panel);border:1px solid var(--sep);border-radius:12px;overflow:hidden}
+  section > h2{margin:0;padding:11px 14px;font-size:12px;font-weight:600;letter-spacing:.04em;
+    text-transform:uppercase;color:var(--dim);border-bottom:1px solid var(--sep)}
+  .hint{padding:9px 14px;color:var(--dim2);font-size:12px;border-bottom:1px solid var(--sep)}
+  .scroll{max-height:64vh;overflow-y:auto}
+  label.row{display:flex;gap:10px;align-items:baseline;padding:7px 14px;cursor:pointer;border-bottom:1px solid #1d1d23}
+  label.row:hover{background:#1b1b21}
+  label.row input{margin:3px 0 0;accent-color:var(--drop);flex:none}
+  .term{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .n{color:var(--dim2);font-variant-numeric:tabular-nums;flex:none}
+  .row.off .term{color:var(--dim2);text-decoration:line-through}
+  .sample{display:block;color:var(--dim2);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #drop{margin:12vh auto;max-width:620px;padding:44px 30px;text-align:center;border:1.5px dashed #3a3a45;
+    border-radius:16px;background:var(--panel)}
+  #drop.over{border-color:var(--accent);background:#141922}
+  #drop h2{margin:0 0 8px;font-size:19px}
+  #drop p{color:var(--dim);margin:6px 0}
+  #search{width:100%;padding:8px 12px;background:#15151a;color:var(--ink);
+    border:1px solid var(--sep);border-radius:7px;font:inherit;margin:10px 14px;width:calc(100% - 28px)}
+  .pill{font-size:11px;padding:1px 6px;border-radius:5px;background:#25252c;color:var(--dim);flex:none}
+  .byterm{color:var(--drop);font-size:11px;flex:none}
+  footer{padding:0 18px 26px;color:var(--dim2);font-size:12px;max-width:1100px}
+  code{background:#1c1c22;padding:1px 5px;border-radius:4px;font-size:12px}
+</style>
+
+<div id="drop">
+  <h2>Drop your snapshot here</h2>
+  <p>In Constellate: <b>Export ▾ → Snapshot</b>, then drag <code>constellate-snapshot.json</code> onto this page.</p>
+  <p><input type="file" id="file" accept=".json"></p>
+  <p style="color:var(--dim2);font-size:12px">Nothing is uploaded. This page reads the file in your browser and never
+     makes a network request — check by opening it with your Wi-Fi off.</p>
+</div>
+
+<div id="app" hidden>
+<header>
+  <h1>Choose what stays on the map <span id="src"></span></h1>
+  <button id="suggest">Tick the usual personal &amp; clinical terms</button>
+  <button id="clear">Untick everything</button>
+  <span id="tally"></span>
+  <button id="saveSnap" class="primary">Save pruned snapshot</button>
+  <button id="saveList">Save exclusion list</button>
+</header>
+
+<main>
+  <section>
+    <h2>Topics — tick to exclude</h2>
+    <div class="hint">Words from your conversation titles. Ticking one removes every conversation whose title
+      contains it.</div>
+    <div class="scroll" id="terms"></div>
+  </section>
+
+  <section>
+    <h2>Projects and providers</h2>
+    <div class="hint">Claude Code projects, and each provider. Ticking one removes all of its conversations.</div>
+    <div class="scroll" id="groups" style="max-height:26vh"></div>
+    <h2 style="border-top:1px solid var(--sep)">Individual conversations</h2>
+    <input id="search" placeholder="filter by title…">
+    <div class="scroll" id="convs" style="max-height:34vh"></div>
+  </section>
+</main>
+
+<footer>
+  <p><b>Save pruned snapshot</b> writes a snapshot with the excluded conversations removed — import that into
+    Constellate (after <i>Erase all local data</i>, since importing merges), or pass it to the demo recorder.</p>
+  <p><b>Save exclusion list</b> writes the ticked words one per line, for <code>Export-CodeSessions.exe -prune … -exclude &lt;word&gt;</code>.</p>
+</footer>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const state = { convs: [], terms: [], excludedTerms: new Set(), excludedGroups: new Set(), excludedIds: new Set(), name: '' };
+
+const STOPWORDS = new Set(`a an and the to of for in on with without by from at as is are was were be been being it its this that these those
+ how what why when where which who whom can could should would will shall may might must do does did done get gets got
+ my me i you your our their his her they them we us he she about into over under out up down off again further then once
+ here there all any both each few more most other some such no nor not only own same so than too very s t just now
+ using use used make makes made need needs help review analysis new update updates fix fixes create creates
+ claude chatgpt gpt gemini opus sonnet haiku model prompt session sessions chat conversation conversations`.split(/\s+/));
+
+const norm = s => (s || '').toLowerCase();
+const projectOf = c => {
+  const t = c.title || '';
+  return c.provider === 'claude-code' && t.includes(' — ') ? t.split(' — ')[0].trim() : '';
+};
+
+// Words that most people would not want on a shared screen. Only the ones that
+// actually occur in this map get ticked, so the button never invents topics.
+const USUAL = `audit medicare medicaid adr cotiviti smrc claim claims denial denials appeal appeals patient patients
+ hipaa phi npwt dmepos dme wound wounds clinical nurse nursing therapy therapist billing payer reimbursement rental rentals
+ resume cv interview interviews salary salaries negotiate negotiation linkedin recruiter offer promotion compensation
+ payroll commission commissions hire hiring fired discipline hr
+ mortgage 401k retirement invest investing investment stock stocks portfolio dividend tax taxes budget insurance loan
+ challah sourdough bread baking bake recipe recipes dough pizza dinner cooking coffee laundry cleaning
+ workout workouts gym lifting squat deadlift running marathon biking bike calorie diet weight sleep injury doctor dentist
+ wife husband kids child children son daughter family birthday anniversary gift vacation travel flight hotel wedding
+ church prayer shabbat holiday therapy personal medical health symptom prescription`.split(/\s+/).filter(Boolean);
+
+/* ---------------- loading ---------------- */
+
+function load(text, name) {
+  let data;
+  try { data = JSON.parse(text); }
+  catch (e) { alert('That file is not JSON.\n\n' + e.message); return; }
+  const convs = Array.isArray(data) ? data : data.conversations;
+  if (!Array.isArray(convs) || !convs.length) {
+    alert('No conversations in that file. Use Export ▾ → Snapshot in Constellate.');
+    return;
+  }
+  state.convs = convs;
+  state.name = name;
+  state.terms = buildTerms(convs);
+  $('src').textContent = `— ${name}, ${convs.length.toLocaleString()} conversations`;
+  $('drop').hidden = true;
+  $('app').hidden = false;
+  renderTerms();
+  renderGroups();
+  renderConvs();
+  tally();
+}
+
+// One count per conversation per word, so a word repeated in a title is not
+// counted twice and the numbers match what excluding it would remove.
+function buildTerms(convs) {
+  const counts = new Map(), samples = new Map();
+  for (const c of convs) {
+    const seen = new Set();
+    for (const raw of norm(c.title).split(/[^a-z0-9']+/)) {
+      const w = raw.replace(/^'+|'+$/g, '');
+      if (w.length < 3 || STOPWORDS.has(w) || /^\d+$/.test(w) || seen.has(w)) continue;
+      seen.add(w);
+      counts.set(w, (counts.get(w) || 0) + 1);
+      if (!samples.has(w)) samples.set(w, c.title);
+    }
+  }
+  return [...counts.entries()]
+    .filter(([, n]) => n > 1)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([term, n]) => ({ term, n, sample: samples.get(term) }));
+}
+
+/* ---------------- what survives ---------------- */
+
+function excludedByTerm(c) {
+  const t = norm(c.title);
+  for (const term of state.excludedTerms) if (t.includes(term)) return term;
+  return null;
+}
+function excludedByGroup(c) {
+  if (state.excludedGroups.has('provider:' + (c.provider || ''))) return 'provider';
+  const p = projectOf(c);
+  return p && state.excludedGroups.has('project:' + p) ? 'project' : null;
+}
+const isKept = c => !excludedByTerm(c) && !excludedByGroup(c) && !state.excludedIds.has(c.id);
+const kept = () => state.convs.filter(isKept);
+
+function tally() {
+  const k = kept();
+  const words = k.reduce((sum, c) => sum + (c.words || 0), 0);
+  $('tally').innerHTML = `keeping <b>${k.length.toLocaleString()}</b> of ${state.convs.length.toLocaleString()}` +
+    ` · ${words.toLocaleString()} words`;
+  $('saveSnap').disabled = !k.length;
+}
+
+/* ---------------- rendering ---------------- */
+
+function renderTerms() {
+  const box = $('terms');
+  box.innerHTML = '';
+  for (const { term, n, sample } of state.terms) {
+    const row = document.createElement('label');
+    row.className = 'row';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = state.excludedTerms.has(term);
+    cb.onchange = () => {
+      cb.checked ? state.excludedTerms.add(term) : state.excludedTerms.delete(term);
+      row.classList.toggle('off', cb.checked);
+      renderConvs(); tally();
+    };
+    const label = document.createElement('span');
+    label.className = 'term';
+    label.textContent = term;
+    const sub = document.createElement('span');
+    sub.className = 'sample';
+    sub.textContent = sample || '';
+    label.appendChild(sub);
+    const count = document.createElement('span');
+    count.className = 'n';
+    count.textContent = n;
+    row.classList.toggle('off', cb.checked);
+    row.append(cb, label, count);
+    box.appendChild(row);
+  }
+}
+
+function renderGroups() {
+  const box = $('groups');
+  box.innerHTML = '';
+  const add = (key, label, n) => {
+    const row = document.createElement('label');
+    row.className = 'row';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = state.excludedGroups.has(key);
+    cb.onchange = () => {
+      cb.checked ? state.excludedGroups.add(key) : state.excludedGroups.delete(key);
+      row.classList.toggle('off', cb.checked);
+      renderConvs(); tally();
+    };
+    const name = document.createElement('span');
+    name.className = 'term';
+    name.textContent = label;
+    const pill = document.createElement('span');
+    pill.className = 'pill';
+    pill.textContent = key.startsWith('provider:') ? 'provider' : 'project';
+    const count = document.createElement('span');
+    count.className = 'n';
+    count.textContent = n;
+    row.classList.toggle('off', cb.checked);
+    row.append(cb, name, pill, count);
+    box.appendChild(row);
+  };
+  const providers = new Map(), projects = new Map();
+  for (const c of state.convs) {
+    providers.set(c.provider || '?', (providers.get(c.provider || '?') || 0) + 1);
+    const p = projectOf(c);
+    if (p) projects.set(p, (projects.get(p) || 0) + 1);
+  }
+  for (const [p, n] of [...providers].sort((a, b) => b[1] - a[1])) add('provider:' + p, p, n);
+  for (const [p, n] of [...projects].sort((a, b) => b[1] - a[1])) add('project:' + p, p, n);
+}
+
+function renderConvs() {
+  const box = $('convs');
+  const q = norm($('search').value);
+  box.innerHTML = '';
+  let shown = 0;
+  for (const c of state.convs) {
+    const title = c.title || '(untitled)';
+    if (q && !norm(title).includes(q)) continue;
+    if (++shown > 400) break;               // keep a 1,000-conversation map responsive
+    const byTerm = excludedByTerm(c), byGroup = excludedByGroup(c);
+    const row = document.createElement('label');
+    row.className = 'row';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !!(byTerm || byGroup || state.excludedIds.has(c.id));
+    cb.disabled = !!(byTerm || byGroup);
+    cb.onchange = () => {
+      cb.checked ? state.excludedIds.add(c.id) : state.excludedIds.delete(c.id);
+      row.classList.toggle('off', cb.checked);
+      tally();
+    };
+    const name = document.createElement('span');
+    name.className = 'term';
+    name.textContent = title;
+    const sub = document.createElement('span');
+    sub.className = 'sample';
+    sub.textContent = `${c.provider || '?'} · ${c.msgCount || (c.messages || []).length} msgs · ${(c.words || 0).toLocaleString()} words`;
+    name.appendChild(sub);
+    row.classList.toggle('off', cb.checked);
+    row.append(cb, name);
+    if (byTerm) {
+      const why = document.createElement('span');
+      why.className = 'byterm';
+      why.textContent = '“' + byTerm + '”';
+      row.appendChild(why);
+    } else if (byGroup) {
+      const why = document.createElement('span');
+      why.className = 'byterm';
+      why.textContent = byGroup;
+      row.appendChild(why);
+    }
+    box.appendChild(row);
+  }
+  if (!shown) box.innerHTML = '<div class="hint">nothing matches that filter</div>';
+}
+
+/* ---------------- saving ---------------- */
+
+function download(filename, text, type) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+$('saveSnap').onclick = () => {
+  // Kept conversations are copied through untouched, so nothing but the
+  // selection changes between this file and the one exported from the app.
+  download('constellate-pruned.json',
+    JSON.stringify({ app: 'constellate', exported: new Date().toISOString(), conversations: kept() }),
+    'application/json');
+};
+
+$('saveList').onclick = () => {
+  const lines = [...state.excludedTerms].sort();
+  if (!lines.length) { alert('No topics are ticked yet.'); return; }
+  download('constellate-exclude.txt', lines.join('\r\n') + '\r\n', 'text/plain');
+};
+
+$('suggest').onclick = () => {
+  const have = new Set(state.terms.map(t => t.term));
+  let added = 0;
+  for (const w of USUAL) if (have.has(w) && !state.excludedTerms.has(w)) { state.excludedTerms.add(w); added++; }
+  renderTerms(); renderConvs(); tally();
+  if (!added) alert('None of the usual personal or clinical words appear in this map.');
+};
+
+$('clear').onclick = () => {
+  state.excludedTerms.clear();
+  state.excludedGroups.clear();
+  state.excludedIds.clear();
+  renderTerms(); renderGroups(); renderConvs(); tally();
+};
+
+$('search').oninput = renderConvs;
+
+/* ---------------- input ---------------- */
+
+const readFile = (f) => {
+  const r = new FileReader();
+  r.onload = () => load(r.result, f.name);
+  r.readAsText(f);
+};
+$('file').onchange = e => { if (e.target.files[0]) readFile(e.target.files[0]); };
+for (const type of ['dragenter', 'dragover']) {
+  document.addEventListener(type, e => { e.preventDefault(); $('drop').classList.add('over'); });
+}
+document.addEventListener('dragleave', () => $('drop').classList.remove('over'));
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  $('drop').classList.remove('over');
+  const f = e.dataTransfer.files[0];
+  if (f) readFile(f);
+});
+</script>

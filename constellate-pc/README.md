@@ -95,6 +95,36 @@ Export-CodeSessions.exe -list
 Export-CodeSessions.exe -exclude work-repo -exclude scratch -since 2026-01-01
 ```
 
+## Choosing what stays: curate/curate.html
+
+Double-click `curate/curate.html` and drag your snapshot onto it. No install, no
+terminal, no exe — it reads the file in your browser and never makes a network
+request.
+
+- **Topics** — the words in your conversation titles, with a count each. Tick one
+  and every conversation whose title contains it is dropped. Each row shows a
+  sample title so a word like "beds" is not ambiguous.
+- **Projects and providers** — tick `probe` to drop the auto-resume noise in one
+  click, or a whole Claude Code project, or an entire provider.
+- **Individual conversations** — searchable, tickable one at a time. Anything
+  already excluded by a topic or project shows struck through with the reason.
+- **Tick the usual personal & clinical terms** — one click for the obvious ones
+  (audit, medicare, claim, patient, resume, salary, mortgage, recipe, workout,
+  family…). Only words that actually occur in your map are ticked.
+
+A running count sits in the header — *keeping 437 of 1,048 · 1,749,806 words* — so
+you can see the effect before saving anything.
+
+Two outputs:
+
+| Button | Writes | For |
+| --- | --- | --- |
+| Save pruned snapshot | `constellate-pruned.json` | import into Constellate (after *Erase all local data*, since importing merges), or pass to `demo/record-demo.js --snapshot` |
+| Save exclusion list | `constellate-exclude.txt` | the ticked words, one per line, for `Export-CodeSessions.exe -prune … -exclude <word>` |
+
+Kept conversations are copied through untouched, so nothing but the selection
+differs from the snapshot the app exported.
+
 ## Removing conversations
 
 The app itself is all-or-nothing: **Export ▾ → Erase all local data** wipes
@@ -311,6 +341,8 @@ this launcher's sake, serving `-snapshot` and the phone bundle.
 | `site/` | the web app, staged by `fetch-web.sh`, compiled into both binaries |
 | `fetch-web.sh` | fetches + patches the upstream web app into `web/` |
 | `build.sh` / `build.ps1` | build the executable |
+| `curate/curate.html` | pick the topics to exclude, in a browser, no install |
+| `demo/record-demo.js` | records a demo of your own map |
 | `patches/` | the fixes carried against upstream, each explaining itself |
 | `patches/upstream-report.md` | those fixes written up as issues to file upstream |
 
