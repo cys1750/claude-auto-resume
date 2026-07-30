@@ -209,6 +209,42 @@ newer data. About 0.7 MB of app plus the size of your snapshot.
 
 Flags, if a terminal is available: `-snapshot <file>` and `-out <file>`.
 
+## Recording a demo of your own map
+
+`demo/record-demo.js` drives the real app in a Chromium window with a screencast
+running and writes a `.webm`. It starts `Constellate.exe` itself on a loopback
+port, so nothing but Node is needed alongside the exe.
+
+```powershell
+cd constellate-pc\demo
+npm install playwright
+npx playwright install chromium
+
+node record-demo.js --snapshot "$env:USERPROFILE\Downloads\constellate-snapshot.json" ^
+                    --topics "pandas|kubernetes|deploy" ^
+                    --code-sessions ..\claude-code-sessions.json
+```
+
+It prints a verified checklist as it goes — map imported, zoom, orbit, search,
+conversation opened, axes layout, code sessions imported, no console errors — and
+exits non-zero if any step did not happen, so a silent failure cannot pass for a
+finished recording.
+
+**Everything in your map appears on camera**: node labels, the sidebar's topic
+clusters, and the reader's list of similar conversations. `--topics` governs only
+which conversation is *opened*, not what else is on screen, so prune the snapshot
+first if it holds anything you would not screen-share:
+
+```powershell
+Export-CodeSessions.exe -prune constellate-snapshot.json -exclude medical -exclude salary
+```
+
+Omit `--topics` and no conversation is opened at all. `--hide-similar` hides the
+reader's similar-conversations list. Watch the result before sharing it.
+
+Output is VP8 `.webm` (what Chromium records natively). Windows Media Player,
+Edge and Chrome all play it.
+
 ## Build it yourself
 
 The build fetches the upstream web app at a pinned revision, applies the patches
