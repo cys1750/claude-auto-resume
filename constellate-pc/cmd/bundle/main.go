@@ -26,8 +26,11 @@ import (
 )
 
 const (
-	threeTag     = `<script src="./vendor/three.min.js"></script>`
-	snapshotGlob = "constellate-snapshot*.json"
+	threeTag = `<script src="./vendor/three.min.js"></script>`
+	// Matches what the app exports (constellate-snapshot.json), what -prune writes
+	// and what curate.html saves (constellate-pruned.json), and the "(1)" copies a
+	// second download leaves behind. Newest wins.
+	snapshotGlob = "constellate-*.json"
 	defaultOut   = "constellate-phone.html"
 )
 
