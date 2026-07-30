@@ -23,7 +23,7 @@ const http = require('http');
 
 function parseArgs(argv) {
   const args = {
-    exe: '', snapshot: '', codeSessions: '', topics: '', out: '.',
+    exe: '', snapshot: '', codeSessions: '', topics: '', search: '', out: '.',
     port: 47615, width: 1280, height: 800, hideSimilar: false, keepOpen: false,
   };
   for (let i = 2; i < argv.length; i++) {
@@ -34,6 +34,7 @@ function parseArgs(argv) {
       case '--snapshot': args.snapshot = next(); break;
       case '--code-sessions': args.codeSessions = next(); break;
       case '--topics': args.topics = next(); break;
+      case '--search': args.search = next(); break;
       case '--out': args.out = next(); break;
       case '--port': args.port = Number(next()); break;
       case '--width': args.width = Number(next()); break;
@@ -54,6 +55,7 @@ Usage: node record-demo.js --snapshot <file> [options]
   --snapshot <file>        the map to record: Export ▾ → Snapshot in Constellate
   --topics <regex>         only open a conversation whose title matches this.
                            Omit and the reader beat is skipped (nothing opened).
+  --search <term>          what to type in the search box (default: from the map)
   --code-sessions <file>   Export-CodeSessions.exe output, imported on camera
   --exe <file>             Constellate.exe (default: ../dist, then alongside)
   --out <dir>              where to write the .webm (default: current folder)
@@ -245,7 +247,7 @@ async function waitForServer(url, tries = 40) {
   await clearCaption(200);
 
   // Search, using a term from the map itself so it always matches something.
-  const term = await page.evaluate((src) => {
+  const term = args.search || await page.evaluate((src) => {
     const re = src ? new RegExp(src, 'i') : null;
     const pool = re ? S.convs.filter(c => re.test(c.title)) : S.convs;
     const title = (pool[0] || S.convs[0]).title;
@@ -265,22 +267,29 @@ async function waitForServer(url, tries = 40) {
   // Open one conversation — only ever one whose title matches --topics.
   if (topics) {
     await say('Click a node to read the conversation', 1200);
-    const hit = await page.evaluate((src) => {
+    // Bring the best match into view, then read its screen position. Without the
+    // focus step the beat silently skips whenever the camera happens to be
+    // pointed away from the match.
+    const focused = await page.evaluate((src) => {
       const re = new RegExp(src, 'i');
-      const rect = document.querySelector('canvas').getBoundingClientRect();
-      let best = null;
+      let pick = -1, score = -1;
       for (let i = 0; i < G.N; i++) {
         if (!G.vis[i] || !re.test(S.convs[i].title)) continue;
-        const v = new THREE.Vector3(G.pos[i * 3], G.pos[i * 3 + 1], G.pos[i * 3 + 2]).project(R.camera);
-        if (Math.abs(v.x) > 0.45 || Math.abs(v.y) > 0.45) continue;
-        const score = S.convs[i].msgCount || 0;
-        if (!best || score > best.score) {
-          best = { score, title: S.convs[i].title,
-                   x: rect.left + (v.x * .5 + .5) * rect.width, y: rect.top + (-v.y * .5 + .5) * rect.height };
-        }
+        const s = S.convs[i].msgCount || 0;
+        if (s > score) { pick = i; score = s; }
       }
-      return best;
+      if (pick < 0) return null;
+      focusNode(pick, true);
+      return { index: pick, title: S.convs[pick].title };
     }, args.topics);
+    await page.waitForTimeout(1400);   // let the camera tween land
+    const hit = focused && await page.evaluate((i) => {
+      const rect = document.querySelector('canvas').getBoundingClientRect();
+      const v = new THREE.Vector3(G.pos[i * 3], G.pos[i * 3 + 1], G.pos[i * 3 + 2]).project(R.camera);
+      if (Math.abs(v.x) > 0.9 || Math.abs(v.y) > 0.9) return null;
+      return { x: rect.left + (v.x * .5 + .5) * rect.width, y: rect.top + (-v.y * .5 + .5) * rect.height };
+    }, focused.index);
+    if (hit) hit.title = focused.title;
     if (hit) {
       await page.mouse.move(hit.x, hit.y, { steps: 18 });
       await page.waitForTimeout(400);
